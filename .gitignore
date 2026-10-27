@@ -31,3 +31,6 @@ dist-ssr
 *.sln
 *.sw?
 /.claude/
+
+# checkout of another repo made by the map workflow
+_source/

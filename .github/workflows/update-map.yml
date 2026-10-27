@@ -1,7 +1,8 @@
 name: Update architecture map
 
-# Stage 1: manual only. Claude edits site/architecture.yaml and the diff is
-# printed in the run log — nothing is committed or pushed yet.
+# Stage 2: manual only. Claude updates site/architecture.yaml, the scripts
+# mirror it into the page and validate it, and the result is raised as a PR.
+# Claude never commits — the mechanical steps are deterministic on purpose.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,7 @@ jobs:
 
     permissions:
       contents: write
+      pull-requests: write
       id-token: write
 
     steps:
@@ -30,13 +32,18 @@ jobs:
           path: _source
           fetch-depth: 1
 
+      # owner/name is not usable in a branch name as-is.
+      - name: Name the branch after the source repo
+        id: meta
+        run: echo "slug=$(echo '${{ inputs.source_repo }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Update the YAML
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Edit is not granted by default, so the first working run could read
-          # everything and change nothing. No Bash: the prompt has no need of it.
+          # Edit is not granted by default, so without this Claude reads
+          # everything and changes nothing. No Bash: the prompt has no need.
           claude_args: |
             --max-turns 20
             --allowedTools "Read,Glob,Grep,Edit,Write"
@@ -59,15 +66,58 @@ jobs:
             application code rather than read directly from a Terraform
             resource, since those are the ones I need to check.
 
+      # Claude's own words, reused as the PR description and the run summary.
+      - name: Collect Claude's report
+        if: always()
+        run: |
+          OUT=/home/runner/work/_temp/claude-execution-output.json
+          {
+            echo "Raised automatically from a change in [\`${{ inputs.source_repo }}\`](https://github.com/${{ inputs.source_repo }})."
+            echo
+            echo "---"
+            echo
+            if [ -f "$OUT" ]; then
+              jq -r '[.. | objects | select(.type? == "result") | .result?]
+                     | map(select(. != null)) | last // "No result recorded."' "$OUT" \
+                || echo "_Could not parse the execution log._"
+            else
+              echo "_No execution log written._"
+            fi
+          } > "$RUNNER_TEMP/claude-report.md"
+
+      # Deterministic, so they are scripts rather than something Claude does.
+      # check_architecture.py exits non-zero, which fails the job before a PR
+      # can be raised on a broken map.
+      - name: Mirror into the page and validate
+        if: steps.claude.outcome == 'success'
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/sync_page.py
+          python scripts/check_architecture.py
+
+      # add-paths matters: the workspace also holds _source, and without it
+      # the whole checked-out source repo would land in the commit.
+      - name: Raise a pull request
+        if: steps.claude.outcome == 'success'
+        id: pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/arch-map/${{ steps.meta.outputs.slug }}
+          delete-branch: true
+          add-paths: |
+            site/architecture.yaml
+            site/cloud-architecture.html
+          title: Update the architecture map from ${{ inputs.source_repo }}
+          commit-message: Update the architecture map from ${{ inputs.source_repo }}
+          body-path: ${{ runner.temp }}/claude-report.md
+
       # Renders on the run's summary page. The point is to tell "Claude looked
       # and agreed" apart from "Claude never ran" — an unchanged file alone
       # cannot distinguish the two.
       - name: Report what Claude decided
         if: always()
         run: |
-          OUT=/home/runner/work/_temp/claude-execution-output.json
           REPORT=$(mktemp)
-
           {
             echo "## Architecture map vs \`${{ inputs.source_repo }}\`"
             echo
@@ -76,28 +126,20 @@ jobs:
               echo "### :x: Claude did not complete"
               echo
               echo "The map was **not** checked. Treat an unchanged file as meaningless here."
-            elif git diff --quiet -- site/architecture.yaml; then
-              echo "### :white_check_mark: No change needed"
-              echo
-              echo "Claude read the Terraform and left the map as it is."
-            else
+            elif [ -n "${{ steps.pr.outputs.pull-request-number }}" ]; then
               echo "### :pencil2: Map updated"
               echo
-              echo '```diff'
-              git --no-pager diff -- site/architecture.yaml
-              echo '```'
+              echo "PR [#${{ steps.pr.outputs.pull-request-number }}](${{ steps.pr.outputs.pull-request-url }}) was ${{ steps.pr.outputs.pull-request-operation }}."
+            else
+              echo "### :white_check_mark: No change needed"
+              echo
+              echo "Claude read the Terraform and left the map as it is, so no PR was raised."
             fi
 
             echo
             echo "### What Claude reported"
             echo
-            if [ -f "$OUT" ]; then
-              jq -r '[.. | objects | select(.type? == "result") | .result?]
-                     | map(select(. != null)) | last // "No result recorded."' "$OUT" \
-                || echo "_Could not parse $OUT._"
-            else
-              echo "_No execution log written._"
-            fi
+            cat "$RUNNER_TEMP/claude-report.md" 2>/dev/null || echo "_No report._"
           } > "$REPORT"
 
           cat "$REPORT"

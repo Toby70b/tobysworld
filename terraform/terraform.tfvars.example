@@ -13,4 +13,4 @@ tags = {
 }
 
 # Repository allowed to assume the deploy role.
-github_repository = "Toby70b/tobysworld"
+github_subject_prefix = "repo:OWNER@000000/REPO@0000000"

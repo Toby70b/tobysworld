@@ -18,8 +18,13 @@ variable "subdomain" {
   type        = string
 }
 
-variable "github_repository" {
-  description = "owner/name of the repository allowed to assume the deploy role. The trust policy is pinned to this repo's main branch."
+variable "github_subject_prefix" {
+  description = <<-EOT
+    The OIDC subject prefix the deploy workflow presents, without the trailing
+    ":ref:...". This repo has immutable subject claims enabled, so it carries
+    numeric owner and repo IDs rather than the readable name. Read it from:
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  EOT
   type        = string
 }
 

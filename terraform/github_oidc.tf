@@ -21,7 +21,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 resource "aws_iam_role" "github_deploy" {
   name        = "github-deploy-architecture-map"
-  description = "Lets ${var.github_repository} publish the architecture map and invalidate its CDN."
+  description = "Lets the architecture map repository publish the site and invalidate its CDN."
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -38,7 +38,12 @@ resource "aws_iam_role" "github_deploy" {
           # branch in the repo could assume it — including a branch opened by
           # a pull request. StringEquals rather than StringLike, so there is
           # no wildcard to get wrong.
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+          #
+          # The prefix carries numeric owner and repo IDs because this repo has
+          # immutable subject claims on; the readable "repo:owner/name" form
+          # never matches and fails with "Not authorized to perform
+          # sts:AssumeRoleWithWebIdentity".
+          "token.actions.githubusercontent.com:sub" = "${var.github_subject_prefix}:ref:refs/heads/main"
         }
       }
     }]

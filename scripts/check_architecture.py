@@ -5,7 +5,8 @@
 
 Catches the things the page would otherwise report as a "needs attention"
 notice, plus the one it can't: a resource type added to the YAML without a
-matching entry in TYPES and GLYPHS, which would silently render as a grey box.
+matching entry in TYPES, and artwork in either ICONS or GLYPHS, which would
+silently render as a grey box.
 """
 
 import re
@@ -60,10 +61,12 @@ def main() -> int:
     ids = {str(r.get("id")) for r in resources}
     project_ids = {str(p.get("id")) for p in projects}
     types = keys_of(html, "TYPES")
-    glyphs = keys_of(html, "GLYPHS")
+    # Official artwork lives in ICONS, hand-drawn fallbacks in GLYPHS; a type
+    # only needs to appear in one of them.
+    artwork = keys_of(html, "GLYPHS") | keys_of(html, "ICONS")
 
-    if not types or not glyphs:
-        problems.append("could not read TYPES/GLYPHS out of the page")
+    if not types or not artwork:
+        problems.append("could not read TYPES/GLYPHS/ICONS out of the page")
 
     seen: set[str] = set()
     for r in resources:
@@ -75,8 +78,8 @@ def main() -> int:
         rtype = r.get("type")
         if types and rtype not in types:
             problems.append(f"'{rid}' uses type '{rtype}', which is not in TYPES")
-        if glyphs and rtype not in glyphs:
-            problems.append(f"'{rid}' uses type '{rtype}', which has no glyph in GLYPHS")
+        if artwork and rtype not in artwork:
+            problems.append(f"'{rid}' uses type '{rtype}', which has no artwork in ICONS or GLYPHS")
 
         if not r.get("projects"):
             problems.append(f"'{rid}' is not tagged with any project")

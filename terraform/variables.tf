@@ -1,15 +1,11 @@
 variable "region" {
   description = "The AWS region the bucket and supporting resources are created in. The distribution itself is global."
   type        = string
-  default     = "eu-west-2"
 }
 
 variable "tags" {
   description = "Tags applied to every resource via the provider's default_tags."
   type        = map(string)
-  default = {
-    project = "architecture-map"
-  }
 }
 
 variable "domain_name" {
@@ -20,7 +16,6 @@ variable "domain_name" {
 variable "subdomain" {
   description = "Subdomain the map is served from. The full name becomes <subdomain>.<domain_name>."
   type        = string
-  default     = "architecture"
 }
 
 variable "site_dir" {

@@ -30,6 +30,20 @@ jobs:
           path: _source
           fetch-depth: 1
 
+      # TEMPORARY: prints only the length, never the value, to tell an empty
+      # secret apart from a rejected one. Remove with show_full_output.
+      - name: Check the secret is non-empty
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          echo "secret length: ${#TOKEN}"
+          case "$TOKEN" in
+            "")                echo "::error::secret is empty" ;;
+            sk-ant-oat*)       echo "looks like a subscription token" ;;
+            sk-ant-api*)       echo "::warning::this is an API key, not a subscription token" ;;
+            *)                 echo "::warning::unexpected prefix" ;;
+          esac
+
       - name: Update the YAML
         uses: anthropics/claude-code-action@v1
         with:

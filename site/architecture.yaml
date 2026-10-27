@@ -151,7 +151,7 @@ connections:
   - { from: games-import, to: steam-api-key, label: reads }
   - { from: games-import, to: steam-api, label: requests apps }
   - { from: games-import, to: import-watermark, label: updates }
-  - { from: games-import, to: games-table, label: writes }
+  - { from: games-import, to: games-table, label: updates }
   - { from: games-table, to: game-event-publisher, label: stream }
   - { from: game-event-publisher, to: game-events, label: publishes }
   - { from: export-schedule, to: games-export, label: invokes }

@@ -1,0 +1,63 @@
+name: Update architecture map
+
+# Stage 1: manual only. Claude edits site/architecture.yaml and the diff is
+# printed in the run log — nothing is committed or pushed yet.
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Repository whose Terraform changed (owner/name)
+        required: true
+        default: Toby70b/does-it-have-fall-damage
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Check out the map
+        uses: actions/checkout@v6
+
+      - name: Check out the repository that changed
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.source_repo }}
+          path: _source
+          fetch-depth: 1
+
+      - name: Update the YAML
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: --max-turns 20
+          prompt: |
+            Read architecture-map-brief.md first. It has the schema, the scope
+            rules, the conventions and the list of things to leave off the map.
+
+            The repository whose Terraform changed is checked out at ./_source.
+            Read its Terraform and its Lambda source, and update
+            site/architecture.yaml so the map matches what is actually declared
+            there.
+
+            Edit only site/architecture.yaml. Do not run the scripts in
+            scripts/, do not commit, do not push — a later step handles that.
+
+            If nothing on the map needs to change, leave the file untouched and
+            say so rather than inventing an edit.
+
+            Finish by listing every edge you inferred from IAM policies or
+            application code rather than read directly from a Terraform
+            resource, since those are the ones I need to check.
+
+      - name: Show the diff
+        run: |
+          if git diff --quiet -- site/architecture.yaml; then
+            echo "No change to site/architecture.yaml."
+          else
+            git --no-pager diff -- site/architecture.yaml
+          fi

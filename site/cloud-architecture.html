@@ -227,7 +227,7 @@ projects:
     name: Architecture map
     colour: "#C2710C"
     repo: ""
-    description: This page — a single-page map of the infrastructure, to be served as a static site.
+    description: This page — a single-page map of the infrastructure, served as a static site from S3 behind CloudFront.
 
 resources:
   - id: import-schedule
@@ -336,15 +336,13 @@ resources:
     type: cloudfront
     name: Architecture map CDN
     projects: [architecture-map, personal-domain]
-    status: planned
-    description: Will serve the map over HTTPS from the private bucket behind it.
+    description: Serves the map at architecture.tobypeel.com, reusing the wildcard certificate the capsule CDN already owns rather than issuing a second one. The page and its YAML are held only briefly at the edge, so an update shows up quickly.
 
   - id: map-bucket
     type: s3
     name: Architecture map bucket
     projects: [architecture-map]
-    status: planned
-    description: Will hold the page and its YAML. Private, reachable only through the distribution.
+    description: Holds the page and its YAML, uploaded by Terraform with per-file cache headers. Private, reachable only through the distribution in front of it.
 
 connections:
   - { from: import-schedule, to: games-import, label: invokes }

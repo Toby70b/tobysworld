@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<!--
+  Data source:
+  - Leave data-yaml-src empty to use the YAML embedded at the bottom of this file.
+  - When hosting on your own domain, set data-yaml-src="architecture.yaml" and put the
+    YAML file next to this page. If the fetch fails, the embedded copy is used instead.
+-->
+<html lang="en-GB" data-yaml-src="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cloud architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<style>
+  :root {
+    --bg: #EDF0F3;
+    --surface: #FFFFFF;
+    --ink: #18212B;
+    --muted: #5B6673;
+    --line: #CAD2DB;
+    --dot: #CFD6DE;
+    --band: rgba(255,255,255,.55);
+    --focus: #1F5FD1;
+    --cat-compute: #D86400;
+    --cat-storage: #3F8624;
+    --cat-database: #B41FBD;
+    --cat-integration: #D0136C;
+    --cat-network: #7A3FF0;
+    --cat-mgmt: #A30B4A;
+    --cat-external: #4F5A67;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11161D; --surface: #1A222C; --ink: #E5EAF0; --muted: #98A4B1;
+      --line: #2C3745; --dot: #242E3A; --band: rgba(255,255,255,.025); --focus: #7FA8FF;
+      --cat-external: #66717E;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11161D; --surface: #1A222C; --ink: #E5EAF0; --muted: #98A4B1;
+    --line: #2C3745; --dot: #242E3A; --band: rgba(255,255,255,.025); --focus: #7FA8FF;
+    --cat-external: #66717E;
+    color-scheme: dark;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Schibsted Grotesk", "Helvetica Neue", Arial, system-ui, sans-serif;
+    font-size: 16px; line-height: 1.5;
+  }
+  .page { max-width: 1440px; margin: 0 auto; padding: 28px clamp(16px, 4vw, 40px) 48px; }
+
+  header.top { margin-bottom: 22px; }
+  h1 {
+    font-size: clamp(2.1rem, 6vw, 3.8rem); font-weight: 800; line-height: 1;
+    letter-spacing: -0.035em; margin: 0 0 10px;
+  }
+  #summary { margin: 0 0 18px; color: var(--muted); max-width: 64ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip {
+    --p: var(--muted);
+    display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
+    padding: 6px 14px 6px 10px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+    font: inherit; font-weight: 500; font-size: .92rem;
+  }
+  .chip .sw { width: 12px; height: 12px; border-radius: 50%; background: var(--p); }
+  .chip .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip[aria-pressed="true"] { border-color: var(--p); background: color-mix(in srgb, var(--p) 16%, var(--surface)); }
+  .chip.clear { border-style: dashed; padding-left: 14px; color: var(--muted); }
+  .chip:focus-visible, .linkish:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .mapwrap {
+    overflow: auto; border: 1px solid var(--line); border-radius: 18px;
+    background: radial-gradient(var(--dot) 1.1px, transparent 1.4px) 0 0 / 20px 20px, var(--bg);
+    -webkit-overflow-scrolling: touch;
+  }
+  #map { position: relative; margin: 0 auto; }
+  #edges { position: absolute; inset: 0; overflow: visible; }
+
+  .band-bg { fill: var(--band); stroke: var(--line); stroke-dasharray: 3 5; }
+  .band-label { position: absolute; font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: 8px; transition: opacity .2s; }
+  .band-label .sw { width: 10px; height: 10px; border-radius: 3px; }
+  .band.dim, .band-label.dim { opacity: .25; }
+
+  .node {
+    position: absolute; width: 136px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+    transition: opacity .2s; -webkit-tap-highlight-color: transparent;
+  }
+  .node .icon {
+    width: 56px; height: 56px; border-radius: 13px; display: grid; place-items: center;
+    background: var(--c); box-shadow: 0 0 0 5px var(--bg), 0 2px 6px rgba(0,0,0,.18);
+    transition: transform .15s;
+  }
+  .node .icon svg { width: 32px; height: 32px; }
+  .node.planned .icon { background: transparent; outline: 2px dashed var(--c); outline-offset: -2px; }
+  .node.planned .icon svg * { stroke: var(--c); }
+  .node:hover .icon, .node.focus .icon { transform: translateY(-2px); }
+  .node[aria-pressed="true"] .icon { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .node:focus-visible .icon { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .node .name { font-weight: 600; font-size: .86rem; line-height: 1.2; text-align: center; max-width: 130px; }
+  .node .kind { font-size: .74rem; color: var(--muted); line-height: 1.2; margin-top: -3px; }
+  .pips { display: flex; gap: 3px; }
+  .pips span { width: 14px; height: 4px; border-radius: 2px; }
+  .node.dim { opacity: .15; }
+
+  .edge { transition: opacity .2s; }
+  .edge .track { fill: none; stroke-width: 2; opacity: .55; transition: opacity .2s, stroke-width .2s; }
+  .edge.planned .track { stroke-dasharray: 6 5; }
+  .edge .flow { fill: none; stroke: var(--surface); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 0.1 10; opacity: 0; }
+  .edge .lbl { font-size: 11px; fill: var(--muted); stroke: var(--bg); stroke-width: 4px; paint-order: stroke; stroke-linejoin: round; opacity: 0; transition: opacity .2s; }
+  .edge.active .track { opacity: 1; stroke-width: 3.5; }
+  .edge.active .flow { opacity: .95; animation: flow .6s linear infinite; }
+  .edge.active .lbl { opacity: 1; fill: var(--ink); }
+  .edge.dim { opacity: .1; }
+  @keyframes flow { to { stroke-dashoffset: -10.1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .edge.active .flow { animation: none; stroke-dasharray: none; opacity: 0; }
+    .node .icon, .node, .edge { transition: none; }
+  }
+
+  aside#detail {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px 20px 22px;
+    position: sticky; top: calc(16px + env(safe-area-inset-top, 0px));
+  }
+  @media (max-width: 900px) { aside#detail { position: static; } }
+  #detail h2 { font-size: 1.35rem; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 2px; }
+  #detail h3 { font-size: .95rem; margin: 18px 0 6px; }
+  #detail p { margin: 6px 0; }
+  #detail .kind { color: var(--muted); margin: 0 0 10px; }
+  #detail ul { list-style: none; margin: 0; padding: 0; }
+  #detail li { padding: 5px 0; border-top: 1px solid var(--line); }
+  #detail li:first-child { border-top: 0; }
+  #detail .via { color: var(--muted); font-size: .88rem; }
+  .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; text-align: left; }
+  .linkish:hover { text-decoration-color: currentColor; }
+  #detail a { color: var(--focus); }
+  .proj { margin-top: 14px; }
+  .proj strong { display: flex; align-items: center; gap: 8px; }
+  .proj .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .proj p { color: var(--muted); font-size: .92rem; }
+  .tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tagrow .chip { min-height: 32px; font-size: .84rem; padding: 3px 12px 3px 8px; }
+
+  .below { margin-top: 18px; display: grid; gap: 12px; }
+  .notice { background: color-mix(in srgb, var(--cat-compute) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--cat-compute) 40%, var(--line)); border-radius: 12px; padding: 12px 16px; }
+  .notice ul { margin: 6px 0 0; padding-left: 20px; }
+  .hint { color: var(--muted); font-size: .88rem; margin: 10px 2px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1 id="title">Cloud architecture</h1>
+    <p id="summary">Loading the architecture…</p>
+    <div class="chips" id="chips" role="group" aria-label="Filter by project"></div>
+  </header>
+
+  <div class="layout">
+    <div>
+      <section class="mapwrap" aria-label="Architecture map">
+        <div id="map"><svg id="edges" aria-hidden="true"></svg></div>
+      </section>
+      <p class="hint">Hover or tap a resource to trace its connections. Select a project to fade everything outside it.</p>
+    </div>
+    <aside id="detail" aria-live="polite"></aside>
+  </div>
+
+  <div class="below">
+    <div class="notice" id="notice" hidden></div>
+  </div>
+</div>
+
+<script type="text/yaml" id="architecture">
+# architecture.yaml: the single source for the map.
+#
+# Resource types: eventbridge-schedule, lambda, s3, dynamodb, sqs, sns, cloudfront,
+#   route53, ecs, api-gateway, cloudwatch-logs, ssm-parameter, external, github
+# Per resource (optional): description, kind (overrides the type label),
+#   status (deployed | planned; planned is drawn dashed), col (force a column)
+# Connections run from -> to and are coloured by the project both ends share.
+
+title: Cloud architecture
+owner: Toby
+
+projects:
+  - id: game-repository
+    name: Steam game repository
+    colour: "#3A6FD8"
+    repo: https://github.com/Toby70b/game-repository
+    description: Keeps a DynamoDB table of Steam games fresh, snapshots it to S3 nightly and publishes new games and title changes for anything downstream to consume.
+  - id: personal-domain
+    name: Personal domain
+    colour: "#0E9384"
+    repo: ""
+    description: The Route 53 zone that personal apps will sit under as subdomains.
+  - id: architecture-map
+    name: Architecture map
+    colour: "#C2710C"
+    repo: ""
+    description: This page — a single-page map of the infrastructure, to be served as a static site.
+
+resources:
+  - id: import-schedule
+    type: eventbridge-schedule
+    name: Daily import
+    projects: [game-repository]
+    description: EventBridge Scheduler, 22:00 UTC daily, with the flexible time window off.
+
+  - id: games-import
+    type: lambda
+    name: Games import
+    projects: [game-repository]
+    description: Fetches Steam apps changed since the last run, then upserts them in batches — inserting new games and updating titles that changed. Python 3.12, 15-minute timeout because the Steam app list is large.
+
+  - id: steam-api
+    type: external
+    name: Steam Web API
+    projects: [game-repository]
+    description: IStoreService/GetAppList/v1, filtered by if_modified_since.
+
+  - id: steam-api-key
+    type: ssm-parameter
+    name: Steam API key
+    projects: [game-repository]
+    description: SecureString created out of band, so the secret never lands in Terraform state. Terraform builds the ARN from known values rather than reading it.
+
+  - id: import-watermark
+    type: ssm-parameter
+    name: Import watermark
+    projects: [game-repository]
+    description: Unix timestamp of the last successful import, seeded to 0 and advanced by the import function once a run succeeds. Terraform ignores changes to the value so applies don’t reset it.
+
+  - id: games-table
+    type: dynamodb
+    name: Games table
+    projects: [game-repository]
+    description: The game catalogue, hash key game_id with a GSI on steam_game_id. Streams are enabled with a NEW_IMAGE view so changes reach the event publisher.
+
+  - id: game-event-publisher
+    type: lambda
+    name: Game event publisher
+    projects: [game-repository]
+    description: Reads the table’s stream and republishes each change as a structured event. Inserts go out as new_game_item, title changes as game_updated.
+
+  - id: game-events
+    type: sns
+    name: Game events
+    projects: [game-repository]
+    description: The new-game-items topic. Consumers filter on the event_type message attribute to take new games, title updates or both. No subscriptions yet.
+
+  - id: export-schedule
+    type: eventbridge-schedule
+    name: Daily export
+    projects: [game-repository]
+    description: EventBridge Scheduler, 00:00 UTC daily, with the flexible time window off.
+
+  - id: games-export
+    type: lambda
+    name: Games export
+    projects: [game-repository]
+    description: Scans the whole table and writes it out as a single gzipped NDJSON snapshot.
+
+  - id: export-bucket
+    type: s3
+    name: Snapshot bucket
+    projects: [game-repository]
+    description: Holds the nightly snapshot under snapshot/. Versioned, with old non-current versions expiring after a day and five kept.
+
+  - id: hosted-zone
+    type: route53
+    name: Hosted zone
+    projects: [personal-domain]
+    description: The domain apps are published under. Its records aren’t drawn here — the alias record for the architecture map is the only one the map needs.
+
+  - id: map-cdn
+    type: cloudfront
+    name: Architecture map CDN
+    projects: [architecture-map, personal-domain]
+    status: planned
+    description: Will serve the map over HTTPS from the private bucket behind it.
+
+  - id: map-bucket
+    type: s3
+    name: Architecture map bucket
+    projects: [architecture-map]
+    status: planned
+    description: Will hold the page and its YAML. Private, reachable only through the distribution.
+
+connections:
+  - { from: import-schedule, to: games-import, label: invokes }
+  - { from: games-import, to: steam-api-key, label: reads }
+  - { from: games-import, to: steam-api, label: requests apps }
+  - { from: games-import, to: import-watermark, label: updates }
+  - { from: games-import, to: games-table, label: writes }
+  - { from: games-table, to: game-event-publisher, label: stream }
+  - { from: game-event-publisher, to: game-events, label: publishes }
+  - { from: export-schedule, to: games-export, label: invokes }
+  - { from: games-export, to: games-table, label: reads }
+  - { from: games-export, to: export-bucket, label: stores }
+  - { from: hosted-zone, to: map-cdn, label: routes to }
+  - { from: map-cdn, to: map-bucket, label: serves from }
+</script>
+
+<script>
+(() => {
+  const SW = 'fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+  const GLYPHS = {
+    lambda: `<path d="M7 4h3.5l6.5 16M11.2 9.8 6.5 20"/>`,
+    'eventbridge-schedule': `<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3.2 2"/>`,
+    s3: `<ellipse cx="12" cy="6.5" rx="7" ry="2.3"/><path d="M5 6.5 6.8 18c.4 1.3 2.6 2 5.2 2s4.8-.7 5.2-2L19 6.5"/>`,
+    dynamodb: `<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>`,
+    sqs: `<rect x="3" y="8" width="4.4" height="8" rx="1"/><rect x="9.8" y="8" width="4.4" height="8" rx="1"/><rect x="16.6" y="8" width="4.4" height="8" rx="1"/>`,
+    sns: `<circle cx="6" cy="12" r="2.6"/><path d="M8.6 12H13M13 12l6-6M13 12h7M13 12l6 6"/>`,
+    cloudfront: `<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.6 2.6 2.6 13.4 0 16M12 4c-2.6 2.6-2.6 13.4 0 16"/>`,
+    route53: `<path d="M12 3.5 19 6.3v5c0 4.3-2.9 7.6-7 9.4-4.1-1.8-7-5.1-7-9.4v-5z"/><text x="12" y="14.6" text-anchor="middle" font-size="7" font-family="Arial, sans-serif" font-weight="700" fill="#fff" stroke="none">53</text>`,
+    ecs: `<rect x="4" y="4" width="7" height="7" rx="1.2"/><rect x="13" y="4" width="7" height="7" rx="1.2"/><rect x="4" y="13" width="7" height="7" rx="1.2"/><rect x="13" y="13" width="7" height="7" rx="1.2"/>`,
+    'api-gateway': `<rect x="8.5" y="5" width="7" height="14" rx="1.5"/><path d="M3 9h5.5M3 15h5.5M15.5 12H21"/>`,
+    'cloudwatch-logs': `<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9h8M8 12.5h8M8 16h5"/>`,
+    'ssm-parameter': `<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M7 9.5h10M7 14.5h10"/><circle cx="13.5" cy="9.5" r="1.9"/><circle cx="10.5" cy="14.5" r="1.9"/>`,
+    external: `<path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/>`,
+    github: `<circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="8" r="2"/><path d="M7 7.5v9M17 10c0 4-5 3.5-9.4 7"/>`,
+    unknown: `<rect x="5" y="5" width="14" height="14" rx="3"/>`
+  };
+  const TYPES = {
+    'eventbridge-schedule': { label: 'EventBridge schedule', cat: 'integration' },
+    lambda: { label: 'Lambda', cat: 'compute' },
+    s3: { label: 'S3 bucket', cat: 'storage' },
+    dynamodb: { label: 'DynamoDB table', cat: 'database' },
+    sqs: { label: 'SQS queue', cat: 'integration' },
+    sns: { label: 'SNS topic', cat: 'integration' },
+    cloudfront: { label: 'CloudFront', cat: 'network' },
+    route53: { label: 'Route 53 zone', cat: 'network' },
+    ecs: { label: 'ECS service', cat: 'compute' },
+    'api-gateway': { label: 'API Gateway', cat: 'network' },
+    'cloudwatch-logs': { label: 'CloudWatch Logs', cat: 'mgmt' },
+    'ssm-parameter': { label: 'SSM parameter', cat: 'mgmt' },
+    external: { label: 'External API', cat: 'external' },
+    github: { label: 'GitHub', cat: 'external' }
+  };
+  const MUTED_EDGE = '#8A95A3';
+  const COL = 172, ROW = 122, NODE_W = 136, ICON = 56, PAD_X = 28, BAND_LABEL = 40, BAND_GAP = 22;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const typeOf = (r) => TYPES[r.type] || { label: r.type || 'Resource', cat: 'external' };
+
+  const state = { filter: new Set(), hover: null, selected: null };
+  let model, byId, projById, nodeEls = new Map(), edgeEls = [], bandEls = [];
+
+  async function loadSource() {
+    const src = document.documentElement.dataset.yamlSrc;
+    const embedded = $('architecture').textContent;
+    if (src) {
+      try {
+        const res = await fetch(src, { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return { text: await res.text(), origin: src, warning: null };
+      } catch (err) {
+        return { text: embedded, origin: 'embedded copy', warning: `Couldn’t load ${src} (${err.message}), so the copy embedded in this page is shown.` };
+      }
+    }
+    return { text: embedded, origin: 'embedded copy', warning: null };
+  }
+
+  function parse(text) {
+    const raw = jsyaml.load(text) || {};
+    const problems = [];
+    const projects = (raw.projects || []).map((p) => ({ ...p, id: String(p.id), colour: p.colour || p.color || MUTED_EDGE }));
+    const resources = (raw.resources || []).map((r) => ({
+      ...r, id: String(r.id), name: r.name || r.id,
+      projects: [].concat(r.projects || []).map(String),
+      status: r.status === 'planned' ? 'planned' : 'deployed'
+    }));
+    const ids = new Set(resources.map((r) => r.id));
+    resources.forEach((r) => {
+      if (!TYPES[r.type]) problems.push(`“${r.id}” has an unknown type “${r.type}”, so it’s drawn as a generic box.`);
+      r.projects.forEach((p) => { if (!projects.some((x) => x.id === p)) problems.push(`“${r.id}” is tagged with “${p}”, which isn’t in the projects list.`); });
+    });
+    const connections = (raw.connections || []).map((c) => ({ ...c, from: String(c.from), to: String(c.to) })).filter((c) => {
+      const ok = ids.has(c.from) && ids.has(c.to);
+      if (!ok) problems.push(`The connection ${c.from} → ${c.to} names a resource that isn’t listed.`);
+      return ok;
+    });
+    return { title: raw.title || 'Cloud architecture', owner: raw.owner || '', projects, resources, connections, problems };
+  }
+
+  function layout(d) {
+    const incoming = new Map(d.resources.map((r) => [r.id, []]));
+    d.connections.forEach((c) => incoming.get(c.to).push(c.from));
+    const rank = new Map(), visiting = new Set();
+    const rankOf = (id) => {
+      const forced = byId.get(id).col;
+      if (Number.isInteger(forced)) return forced;
+      if (rank.has(id)) return rank.get(id);
+      if (visiting.has(id)) return 0;
+      visiting.add(id);
+      const ins = incoming.get(id);
+      const v = ins.length ? Math.max(...ins.map(rankOf)) + 1 : 0;
+      visiting.delete(id);
+      rank.set(id, v);
+      return v;
+    };
+    d.resources.forEach((r) => { r.rank = rankOf(r.id); });
+
+    const bandIds = [...d.projects.map((p) => p.id), '_none'];
+    const bandFor = (r) => r.projects.find((p) => projById.has(p)) || '_none';
+    const bands = bandIds.map((id) => ({ id, project: projById.get(id), nodes: d.resources.filter((r) => bandFor(r) === id) })).filter((b) => b.nodes.length);
+
+    let y = 12, maxRank = 0;
+    bands.forEach((b) => {
+      const perRank = new Map();
+      const ordered = [...b.nodes].sort((a, c) => (a.type === 'external') - (c.type === 'external'));
+      ordered.forEach((n) => {
+        const list = perRank.get(n.rank) || [];
+        n.row = list.length; list.push(n); perRank.set(n.rank, list);
+        maxRank = Math.max(maxRank, n.rank);
+      });
+      const rows = Math.max(...[...perRank.values()].map((l) => l.length));
+      b.top = y;
+      const nodesTop = y + BAND_LABEL;
+      b.nodes.forEach((n) => { n.x = PAD_X + n.rank * COL; n.y = nodesTop + n.row * ROW; });
+      b.height = BAND_LABEL + rows * ROW;
+      y += b.height + BAND_GAP;
+    });
+    return { bands, width: PAD_X * 2 + maxRank * COL + NODE_W, height: y };
+  }
+
+  function edgePath(a, b) {
+    const x1 = a.x + NODE_W / 2 + ICON / 2 + 5, y1 = a.y + ICON / 2;
+    const x2 = b.x + NODE_W / 2 - ICON / 2 - 8, y2 = b.y + ICON / 2;
+    if (x2 > x1 + 8) {
+      const dx = Math.max(30, (x2 - x1) / 2);
+      return `M${x1} ${y1}C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`;
+    }
+    const drop = Math.max(y1, y2) + ROW * 0.6;
+    return `M${x1} ${y1}C${x1 + 90} ${drop} ${x2 - 90} ${drop} ${x2} ${y2}`;
+  }
+
+  function render() {
+    const geo = layout(model);
+    const map = $('map'), svg = $('edges');
+    map.style.width = geo.width + 'px';
+    map.style.height = geo.height + 'px';
+    svg.setAttribute('viewBox', `0 0 ${geo.width} ${geo.height}`);
+    svg.setAttribute('width', geo.width);
+    svg.setAttribute('height', geo.height);
+
+    const markers = [...model.projects.map((p) => [p.id, p.colour]), ['_none', MUTED_EDGE]]
+      .map(([id, col]) => `<marker id="arrow-${esc(id)}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${esc(col)}"/></marker>`).join('');
+    let svgHtml = `<defs>${markers}</defs>`;
+    geo.bands.forEach((b) => {
+      svgHtml += `<rect class="band band-bg" data-band="${esc(b.id)}" x="8" y="${b.top}" width="${geo.width - 16}" height="${b.height}" rx="14"/>`;
+    });
+    model.connections.forEach((c, i) => {
+      const a = byId.get(c.from), b = byId.get(c.to);
+      const shared = a.projects.find((p) => b.projects.includes(p) && projById.has(p));
+      const colour = shared ? projById.get(shared).colour : MUTED_EDGE;
+      const d = edgePath(a, b);
+      const planned = a.status === 'planned' || b.status === 'planned';
+      svgHtml += `<g class="edge${planned ? ' planned' : ''}" data-i="${i}">
+        <path class="track" d="${d}" stroke="${esc(colour)}" marker-end="url(#arrow-${esc(shared || '_none')})"/>
+        <path class="flow" d="${d}"/>
+        ${c.label ? `<text class="lbl" text-anchor="middle">${esc(c.label)}</text>` : ''}
+      </g>`;
+    });
+    svg.innerHTML = svgHtml;
+    edgeEls = [...svg.querySelectorAll('.edge')].map((el) => {
+      const c = model.connections[+el.dataset.i];
+      const lbl = el.querySelector('.lbl');
+      if (lbl) {
+        const path = el.querySelector('.track');
+        const pt = path.getPointAtLength(path.getTotalLength() / 2);
+        lbl.setAttribute('x', pt.x); lbl.setAttribute('y', pt.y - 7);
+      }
+      return { el, c };
+    });
+
+    map.querySelectorAll('.node, .band-label').forEach((n) => n.remove());
+    bandEls = [...svg.querySelectorAll('.band')].map((el) => ({ el, id: el.dataset.band }));
+    geo.bands.forEach((b) => {
+      const label = document.createElement('div');
+      label.className = 'band-label';
+      label.dataset.band = b.id;
+      label.style.left = (PAD_X - 6) + 'px';
+      label.style.top = (b.top + 10) + 'px';
+      label.innerHTML = b.project
+        ? `<span class="sw" style="background:${esc(b.project.colour)}"></span>${esc(b.project.name)}`
+        : `<span class="sw" style="background:${MUTED_EDGE}"></span>Untagged`;
+      map.appendChild(label);
+      bandEls.push({ el: label, id: b.id });
+    });
+
+    nodeEls = new Map();
+    model.resources.forEach((r) => {
+      const t = typeOf(r);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'node' + (r.status === 'planned' ? ' planned' : '');
+      btn.style.left = r.x + 'px';
+      btn.style.top = r.y + 'px';
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', `${r.name}, ${r.kind || t.label}`);
+      const pips = r.projects.filter((p) => projById.has(p)).map((p) => `<span style="background:${esc(projById.get(p).colour)}" title="${esc(projById.get(p).name)}"></span>`).join('');
+      btn.innerHTML = `<span class="icon" style="--c:var(--cat-${t.cat})"><svg viewBox="0 0 24 24" ${SW}>${GLYPHS[r.type] || GLYPHS.unknown}</svg></span>
+        <span class="name">${esc(r.name)}</span><span class="kind">${esc(r.kind || t.label)}</span><span class="pips">${pips}</span>`;
+      btn.addEventListener('mouseenter', () => { state.hover = r.id; apply(); });
+      btn.addEventListener('mouseleave', () => { state.hover = null; apply(); });
+      btn.addEventListener('focus', () => { state.hover = r.id; apply(); });
+      btn.addEventListener('blur', () => { state.hover = null; apply(); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); state.selected = state.selected === r.id ? null : r.id; apply(); });
+      map.appendChild(btn);
+      nodeEls.set(r.id, btn);
+    });
+  }
+
+  function renderChips() {
+    const chips = $('chips');
+    const counts = (id) => model.resources.filter((r) => r.projects.includes(id)).length;
+    chips.innerHTML = model.projects.map((p) =>
+      `<button type="button" class="chip" data-project="${esc(p.id)}" aria-pressed="false" style="--p:${esc(p.colour)}"><span class="sw"></span>${esc(p.name)} <span class="n">${counts(p.id)}</span></button>`
+    ).join('') + `<button type="button" class="chip clear" id="clear" hidden>Show all projects</button>`;
+    chips.querySelectorAll('[data-project]').forEach((b) => b.addEventListener('click', () => toggleProject(b.dataset.project)));
+    $('clear').addEventListener('click', () => { state.filter.clear(); apply(); });
+  }
+
+  function toggleProject(id) {
+    state.filter.has(id) ? state.filter.delete(id) : state.filter.add(id);
+    apply();
+  }
+
+  function apply() {
+    const { filter, hover, selected } = state;
+    const focus = hover || selected;
+    const inFilter = (r) => !filter.size || r.projects.some((p) => filter.has(p));
+    const near = new Set();
+    if (focus) {
+      near.add(focus);
+      model.connections.forEach((c) => { if (c.from === focus) near.add(c.to); if (c.to === focus) near.add(c.from); });
+    }
+    nodeEls.forEach((el, id) => {
+      const r = byId.get(id);
+      el.classList.toggle('dim', !inFilter(r) || (!!focus && !near.has(id)));
+      el.classList.toggle('focus', id === focus);
+      el.setAttribute('aria-pressed', String(id === selected));
+    });
+    edgeEls.forEach(({ el, c }) => {
+      const active = !!focus && (c.from === focus || c.to === focus);
+      const visible = inFilter(byId.get(c.from)) && inFilter(byId.get(c.to));
+      el.classList.toggle('active', active && visible);
+      el.classList.toggle('dim', !visible || (!!focus && !active));
+    });
+    bandEls.forEach(({ el, id }) => el.classList.toggle('dim', filter.size > 0 && !filter.has(id)));
+    document.querySelectorAll('.chip[data-project]').forEach((b) => b.setAttribute('aria-pressed', String(filter.has(b.dataset.project))));
+    $('clear').hidden = filter.size === 0;
+    renderDetail(focus);
+  }
+
+  let lastDetail;
+  function renderDetail(id) {
+    const key = id + '|' + [...state.filter].join(',');
+    if (key === lastDetail) return;
+    lastDetail = key;
+    const box = $('detail');
+    if (!id) {
+      const shown = model.projects.filter((p) => !state.filter.size || state.filter.has(p.id));
+      box.innerHTML = `<h2>${state.filter.size ? 'Selected projects' : 'Projects'}</h2>
+        <p class="kind">Select a resource to see what it talks to.</p>` +
+        shown.map((p) => `<div class="proj"><strong><span class="sw" style="background:${esc(p.colour)}"></span>${esc(p.name)}</strong>
+          ${p.description ? `<p>${esc(p.description)}</p>` : ''}
+          ${p.repo ? `<p><a href="${esc(p.repo)}" target="_blank" rel="noopener">View repository</a></p>` : ''}</div>`).join('');
+      return;
+    }
+    const r = byId.get(id), t = typeOf(r);
+    const out = model.connections.filter((c) => c.from === id);
+    const inc = model.connections.filter((c) => c.to === id);
+    const item = (otherId, label) => {
+      const o = byId.get(otherId);
+      return `<li><button type="button" class="linkish" data-go="${esc(otherId)}">${esc(o.name)}</button>${label ? ` <span class="via">${esc(label)}</span>` : ''}</li>`;
+    };
+    box.innerHTML = `<h2>${esc(r.name)}</h2><p class="kind">${esc(r.kind || t.label)}${r.status === 'planned' ? ', planned' : ''}</p>
+      ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+      <div class="tagrow">${r.projects.filter((p) => projById.has(p)).map((p) => {
+        const pr = projById.get(p);
+        return `<button type="button" class="chip" data-tag="${esc(p)}" aria-pressed="${state.filter.has(p)}" style="--p:${esc(pr.colour)}"><span class="sw"></span>${esc(pr.name)}</button>`;
+      }).join('')}</div>
+      ${out.length ? `<h3>Sends to</h3><ul>${out.map((c) => item(c.to, c.label)).join('')}</ul>` : ''}
+      ${inc.length ? `<h3>Receives from</h3><ul>${inc.map((c) => item(c.from, c.label)).join('')}</ul>` : ''}
+      ${!out.length && !inc.length ? `<p class="kind">No connections recorded.</p>` : ''}`;
+    box.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => {
+      state.selected = b.dataset.go; state.hover = null; apply();
+      nodeEls.get(b.dataset.go)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }));
+    box.querySelectorAll('[data-tag]').forEach((b) => b.addEventListener('click', () => toggleProject(b.dataset.tag)));
+  }
+
+  function summarise() {
+    const internal = model.resources.filter((r) => typeOf(r).cat !== 'external');
+    const external = model.resources.length - internal.length;
+    $('title').textContent = model.title;
+    document.title = model.title;
+    const who = model.owner ? `${model.owner}’s deployed resources: ` : 'Deployed resources: ';
+    $('summary').textContent = `${who}${plural(internal.length, 'resource', 'resources')} across ${plural(model.projects.length, 'project', 'projects')}, calling ${plural(external, 'external service', 'external services')}.`;
+  }
+
+  function showProblems(list) {
+    const n = $('notice');
+    if (!list.length) { n.hidden = true; return; }
+    n.hidden = false;
+    n.innerHTML = `<strong>${plural(list.length, 'thing', 'things')} in the YAML need attention</strong><ul>${list.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`;
+  }
+
+  function readHash() {
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h && projById.has(h)) { state.filter = new Set([h]); apply(); }
+  }
+
+  async function init() {
+    const { text, warning } = await loadSource();
+    if (typeof jsyaml === 'undefined') {
+      $('summary').textContent = 'The YAML parser didn’t load. Check the connection and reload the page.';
+      return;
+    }
+    try {
+      model = parse(text);
+    } catch (err) {
+      $('summary').textContent = `The YAML couldn’t be read: ${err.reason || err.message}${err.mark ? ` (line ${err.mark.line + 1})` : ''}. Fix it and reload.`;
+      return;
+    }
+    byId = new Map(model.resources.map((r) => [r.id, r]));
+    projById = new Map(model.projects.map((p) => [p.id, p]));
+    summarise();
+    showProblems([...(warning ? [warning] : []), ...model.problems]);
+    renderChips();
+    render();
+    apply();
+    readHash();
+    window.addEventListener('hashchange', readHash);
+    $('map').addEventListener('click', () => { if (state.selected) { state.selected = null; apply(); } });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { state.selected = null; state.hover = null; apply(); } });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

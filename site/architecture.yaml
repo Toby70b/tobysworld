@@ -1,0 +1,128 @@
+# architecture.yaml: the single source for the map.
+#
+# Resource types: eventbridge-schedule, lambda, s3, dynamodb, sqs, sns, cloudfront,
+#   route53, ecs, api-gateway, cloudwatch-logs, ssm-parameter, external, github
+# Per resource (optional): description, kind (overrides the type label),
+#   status (deployed | planned; planned is drawn dashed), col (force a column)
+# Connections run from -> to and are coloured by the project both ends share.
+
+title: Cloud architecture
+owner: Toby
+
+projects:
+  - id: game-repository
+    name: Steam game repository
+    colour: "#3A6FD8"
+    repo: https://github.com/Toby70b/game-repository
+    description: Keeps a DynamoDB table of Steam games fresh, snapshots it to S3 nightly and publishes new games and title changes for anything downstream to consume.
+  - id: personal-domain
+    name: Personal domain
+    colour: "#0E9384"
+    repo: ""
+    description: The Route 53 zone that personal apps will sit under as subdomains.
+  - id: architecture-map
+    name: Architecture map
+    colour: "#C2710C"
+    repo: ""
+    description: This page — a single-page map of the infrastructure, to be served as a static site.
+
+resources:
+  - id: import-schedule
+    type: eventbridge-schedule
+    name: Daily import
+    projects: [game-repository]
+    description: EventBridge Scheduler, 22:00 UTC daily, with the flexible time window off.
+
+  - id: games-import
+    type: lambda
+    name: Games import
+    projects: [game-repository]
+    description: Fetches Steam apps changed since the last run, then upserts them in batches — inserting new games and updating titles that changed. Python 3.12, 15-minute timeout because the Steam app list is large.
+
+  - id: steam-api
+    type: external
+    name: Steam Web API
+    projects: [game-repository]
+    description: IStoreService/GetAppList/v1, filtered by if_modified_since.
+
+  - id: steam-api-key
+    type: ssm-parameter
+    name: Steam API key
+    projects: [game-repository]
+    description: SecureString created out of band, so the secret never lands in Terraform state. Terraform builds the ARN from known values rather than reading it.
+
+  - id: import-watermark
+    type: ssm-parameter
+    name: Import watermark
+    projects: [game-repository]
+    description: Unix timestamp of the last successful import, seeded to 0 and advanced by the import function once a run succeeds. Terraform ignores changes to the value so applies don’t reset it.
+
+  - id: games-table
+    type: dynamodb
+    name: Games table
+    projects: [game-repository]
+    description: The game catalogue, hash key game_id with a GSI on steam_game_id. Streams are enabled with a NEW_IMAGE view so changes reach the event publisher.
+
+  - id: game-event-publisher
+    type: lambda
+    name: Game event publisher
+    projects: [game-repository]
+    description: Reads the table’s stream and republishes each change as a structured event. Inserts go out as new_game_item, title changes as game_updated.
+
+  - id: game-events
+    type: sns
+    name: Game events
+    projects: [game-repository]
+    description: The new-game-items topic. Consumers filter on the event_type message attribute to take new games, title updates or both. No subscriptions yet.
+
+  - id: export-schedule
+    type: eventbridge-schedule
+    name: Daily export
+    projects: [game-repository]
+    description: EventBridge Scheduler, 00:00 UTC daily, with the flexible time window off.
+
+  - id: games-export
+    type: lambda
+    name: Games export
+    projects: [game-repository]
+    description: Scans the whole table and writes it out as a single gzipped NDJSON snapshot.
+
+  - id: export-bucket
+    type: s3
+    name: Snapshot bucket
+    projects: [game-repository]
+    description: Holds the nightly snapshot under snapshot/. Versioned, with old non-current versions expiring after a day and five kept.
+
+  - id: hosted-zone
+    type: route53
+    name: Hosted zone
+    projects: [personal-domain]
+    description: The domain apps are published under. Its records aren’t drawn here — the alias record for the architecture map is the only one the map needs.
+
+  - id: map-cdn
+    type: cloudfront
+    name: Architecture map CDN
+    projects: [architecture-map, personal-domain]
+    status: planned
+    description: Will serve the map over HTTPS from the private bucket behind it.
+
+  - id: map-bucket
+    type: s3
+    name: Architecture map bucket
+    projects: [architecture-map]
+    status: planned
+    description: Will hold the page and its YAML. Private, reachable only through the distribution.
+
+connections:
+  - { from: import-schedule, to: games-import, label: invokes }
+  - { from: games-import, to: steam-api-key, label: reads }
+  - { from: games-import, to: steam-api, label: requests apps }
+  - { from: games-import, to: import-watermark, label: updates }
+  - { from: games-import, to: games-table, label: writes }
+  - { from: games-table, to: game-event-publisher, label: stream }
+  - { from: game-event-publisher, to: game-events, label: publishes }
+  - { from: export-schedule, to: games-export, label: invokes }
+  - { from: games-export, to: games-table, label: reads }
+  - { from: games-export, to: export-bucket, label: stores }
+  - { from: hosted-zone, to: map-cdn, label: routes to }
+  - { from: map-cdn, to: map-bucket, label: serves from }

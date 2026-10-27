@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+region = "eu-west-2"
+
+# Apex domain of the hosted zone that already exists in Route 53.
+domain_name = "example.co.uk"
+
+# The map ends up at https://architecture.example.co.uk
+subdomain = "architecture"
+
+tags = {
+  project = "architecture-map"
+}

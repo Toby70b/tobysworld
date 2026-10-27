@@ -31,6 +31,7 @@ jobs:
           fetch-depth: 1
 
       - name: Update the YAML
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -58,10 +59,46 @@ jobs:
             application code rather than read directly from a Terraform
             resource, since those are the ones I need to check.
 
-      - name: Show the diff
+      # Renders on the run's summary page. The point is to tell "Claude looked
+      # and agreed" apart from "Claude never ran" — an unchanged file alone
+      # cannot distinguish the two.
+      - name: Report what Claude decided
+        if: always()
         run: |
-          if git diff --quiet -- site/architecture.yaml; then
-            echo "No change to site/architecture.yaml."
-          else
-            git --no-pager diff -- site/architecture.yaml
-          fi
+          OUT=/home/runner/work/_temp/claude-execution-output.json
+          REPORT=$(mktemp)
+
+          {
+            echo "## Architecture map vs \`${{ inputs.source_repo }}\`"
+            echo
+
+            if [ "${{ steps.claude.outcome }}" != "success" ]; then
+              echo "### :x: Claude did not complete"
+              echo
+              echo "The map was **not** checked. Treat an unchanged file as meaningless here."
+            elif git diff --quiet -- site/architecture.yaml; then
+              echo "### :white_check_mark: No change needed"
+              echo
+              echo "Claude read the Terraform and left the map as it is."
+            else
+              echo "### :pencil2: Map updated"
+              echo
+              echo '```diff'
+              git --no-pager diff -- site/architecture.yaml
+              echo '```'
+            fi
+
+            echo
+            echo "### What Claude reported"
+            echo
+            if [ -f "$OUT" ]; then
+              jq -r '[.. | objects | select(.type? == "result") | .result?]
+                     | map(select(. != null)) | last // "No result recorded."' "$OUT" \
+                || echo "_Could not parse $OUT._"
+            else
+              echo "_No execution log written._"
+            fi
+          } > "$REPORT"
+
+          cat "$REPORT"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"

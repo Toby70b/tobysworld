@@ -13,10 +13,12 @@ resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
-  # AWS no longer validates thumbprints for this provider — it trusts the
-  # certificate chain instead. Left empty deliberately; if an apply ever
-  # objects, GitHub's current intermediate thumbprint goes here.
-  thumbprint_list = []
+  # AWS no longer validates thumbprints for this provider and populates the
+  # field itself — emptying it here only makes every future plan want to
+  # remove what AWS puts back. Hand the field to AWS and stop looking at it.
+  lifecycle {
+    ignore_changes = [thumbprint_list]
+  }
 }
 
 resource "aws_iam_role" "github_deploy" {

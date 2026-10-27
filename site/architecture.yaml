@@ -108,13 +108,19 @@ resources:
     type: lambda
     name: Capsule image lookup
     projects: [fall-damage]
-    description: Downloads each game’s capsule art and stores it as <appid>-capsule.jpg. Reports partial batch failures so only the bad records are retried, and treats a 404 as “this game has no art” rather than sending it round again.
+    description: Looks up each game on the Steam store API, downloads the capsule art it points to and stores it as <appid>-capsule.jpg. Python 3.12, 60-second timeout, batches of up to 10 with concurrency capped at 5. Reports partial batch failures so only the bad records are retried.
 
   - id: steam-cdn
     type: steam
     name: Steam CDN
     projects: [fall-damage]
-    description: cdn.cloudflare.steamstatic.com — capsule art on a predictable per-appid path. Used in place of the store’s appdetails API, which 403s from datacentre IPs and has deprecated its image fields.
+    description: Where the capsule art itself is fetched from, using the image URL returned by the store API.
+
+  - id: steam-store-api
+    type: steam
+    name: Steam store API
+    projects: [fall-damage]
+    description: store.steampowered.com — the appdetails endpoint, queried by app id to find each game’s capsule image URL.
 
   - id: capsule-bucket
     type: s3
@@ -159,6 +165,7 @@ connections:
   - { from: games-export, to: export-bucket, label: stores }
   - { from: game-events, to: capsule-queue, label: subscribes }
   - { from: capsule-queue, to: capsule-lookup, label: triggers }
+  - { from: capsule-lookup, to: steam-store-api, label: requests details }
   - { from: capsule-lookup, to: steam-cdn, label: downloads }
   - { from: capsule-lookup, to: capsule-bucket, label: stores }
   - { from: capsule-cdn, to: capsule-bucket, label: serves from }

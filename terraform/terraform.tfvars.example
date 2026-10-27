@@ -11,3 +11,6 @@ subdomain = "architecture"
 tags = {
   project = "architecture-map"
 }
+
+# Repository allowed to assume the deploy role.
+github_repository = "Toby70b/tobysworld"

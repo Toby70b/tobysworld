@@ -18,10 +18,9 @@ variable "subdomain" {
   type        = string
 }
 
-variable "site_dir" {
-  description = "Path to the directory whose contents are uploaded to the bucket, relative to this module."
+variable "github_repository" {
+  description = "owner/name of the repository allowed to assume the deploy role. The trust policy is pinned to this repo's main branch."
   type        = string
-  default     = "../site"
 }
 
 variable "default_root_object" {

@@ -1,8 +1,11 @@
 name: Update architecture map
 
-# Stage 2: manual only. Claude updates site/architecture.yaml, the scripts
-# mirror it into the page and validate it, and the result is raised as a PR.
-# Claude never commits — the mechanical steps are deterministic on purpose.
+# Claude updates site/architecture.yaml against a repo whose Terraform changed,
+# the scripts mirror it into the page and validate it, and the result is raised
+# as a PR. Claude never commits — the mechanical steps are deterministic.
+#
+# Triggered either by hand, or by a repository_dispatch from a source repo.
+# See templates/notify-architecture-map.yml for the sending half.
 on:
   workflow_dispatch:
     inputs:
@@ -10,32 +13,52 @@ on:
         description: Repository whose Terraform changed (owner/name)
         required: true
         default: Toby70b/does-it-have-fall-damage
+  repository_dispatch:
+    types: [infra-changed]
 
 jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # One run per source repo. A second push while a run is in flight
+    # supersedes it rather than racing it onto the same branch.
+    concurrency:
+      group: update-map-${{ inputs.source_repo || github.event.client_payload.repo }}
+      cancel-in-progress: true
+
     permissions:
       contents: write
       pull-requests: write
       id-token: write
 
+    env:
+      # workflow_dispatch supplies an input; repository_dispatch a payload.
+      SOURCE_REPO: ${{ inputs.source_repo || github.event.client_payload.repo }}
+
     steps:
+      - name: Check the trigger named a repository
+        run: |
+          if [ -z "$SOURCE_REPO" ]; then
+            echo "::error::no source repository — a dispatch must send client_payload.repo"
+            exit 1
+          fi
+          echo "Reconciling the map against $SOURCE_REPO"
+
       - name: Check out the map
         uses: actions/checkout@v6
 
       - name: Check out the repository that changed
         uses: actions/checkout@v6
         with:
-          repository: ${{ inputs.source_repo }}
+          repository: ${{ env.SOURCE_REPO }}
           path: _source
           fetch-depth: 1
 
       # owner/name is not usable in a branch name as-is.
       - name: Name the branch after the source repo
         id: meta
-        run: echo "slug=$(echo '${{ inputs.source_repo }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+        run: echo "slug=$(echo "$SOURCE_REPO" | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
       - name: Update the YAML
         id: claude
@@ -56,6 +79,10 @@ jobs:
             site/architecture.yaml so the map matches what is actually declared
             there.
 
+            The map covers several repositories. Resources belonging to the
+            others are not in ./_source and must be left alone — only reconcile
+            the parts of the map that this repository owns.
+
             Edit only site/architecture.yaml. Do not run the scripts in
             scripts/, do not commit, do not push — a later step handles that.
 
@@ -72,7 +99,7 @@ jobs:
         run: |
           OUT=/home/runner/work/_temp/claude-execution-output.json
           {
-            echo "Raised automatically from a change in [\`${{ inputs.source_repo }}\`](https://github.com/${{ inputs.source_repo }})."
+            echo "Raised automatically from a change in [\`$SOURCE_REPO\`](https://github.com/$SOURCE_REPO)."
             echo
             echo "---"
             echo
@@ -107,8 +134,8 @@ jobs:
           add-paths: |
             site/architecture.yaml
             site/cloud-architecture.html
-          title: Update the architecture map from ${{ inputs.source_repo }}
-          commit-message: Update the architecture map from ${{ inputs.source_repo }}
+          title: Update the architecture map from ${{ env.SOURCE_REPO }}
+          commit-message: Update the architecture map from ${{ env.SOURCE_REPO }}
           body-path: ${{ runner.temp }}/claude-report.md
 
       # Renders on the run's summary page. The point is to tell "Claude looked
@@ -119,7 +146,7 @@ jobs:
         run: |
           REPORT=$(mktemp)
           {
-            echo "## Architecture map vs \`${{ inputs.source_repo }}\`"
+            echo "## Architecture map vs \`$SOURCE_REPO\`"
             echo
 
             if [ "${{ steps.claude.outcome }}" != "success" ]; then

@@ -43,6 +43,14 @@ jobs:
             sk-ant-api*)       echo "::warning::this is an API key, not a subscription token" ;;
             *)                 echo "::warning::unexpected prefix" ;;
           esac
+          # A stray newline or space survives the prefix check above and makes
+          # the token invalid, so compare against the whitespace-stripped form.
+          TRIMMED=$(printf '%s' "$TOKEN" | tr -d '[:space:]')
+          if [ "${#TRIMMED}" -ne "${#TOKEN}" ]; then
+            echo "::error::secret contains whitespace (${#TOKEN} chars, ${#TRIMMED} without)"
+          else
+            echo "no stray whitespace"
+          fi
 
       - name: Update the YAML
         uses: anthropics/claude-code-action@v1

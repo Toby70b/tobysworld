@@ -41,7 +41,7 @@ resource "aws_cloudfront_distribution" "s3_software_arch_distribution" {
     cached_methods         = ["GET", "HEAD"]
     target_origin_id       = local.s3_origin_id
     viewer_protocol_policy = "redirect-to-https"
-    compress = true
+    compress               = true
 
     cache_policy_id = data.aws_cloudfront_cache_policy.optimized.id
   }

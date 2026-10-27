@@ -43,14 +43,17 @@ jobs:
             sk-ant-api*)       echo "::warning::this is an API key, not a subscription token" ;;
             *)                 echo "::warning::unexpected prefix" ;;
           esac
-          # A stray newline or space survives the prefix check above and makes
-          # the token invalid, so compare against the whitespace-stripped form.
-          TRIMMED=$(printf '%s' "$TOKEN" | tr -d '[:space:]')
-          if [ "${#TRIMMED}" -ne "${#TOKEN}" ]; then
-            echo "::error::secret contains whitespace (${#TOKEN} chars, ${#TRIMMED} without)"
+          # Anything outside the token alphabet — whitespace, a stray newline,
+          # ANSI escapes from a redirected terminal — survives the prefix check
+          # above but invalidates the token. Compare against the cleaned form.
+          CLEAN=$(printf '%s' "$TOKEN" | tr -cd 'A-Za-z0-9_-')
+          if [ "${#CLEAN}" -ne "${#TOKEN}" ]; then
+            echo "::error::secret has ${#TOKEN} chars but only ${#CLEAN} valid ones — it picked up junk"
           else
-            echo "no stray whitespace"
+            echo "all ${#TOKEN} characters are in the expected alphabet"
           fi
+          # Shape only: how many dash-separated parts, and their lengths.
+          echo "shape: $(printf '%s' "$CLEAN" | awk -F- '{for(i=1;i<=NF;i++) printf "%d ", length($i)}')"
 
       - name: Update the YAML
         uses: anthropics/claude-code-action@v1

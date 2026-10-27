@@ -43,17 +43,17 @@ jobs:
             sk-ant-api*)       echo "::warning::this is an API key, not a subscription token" ;;
             *)                 echo "::warning::unexpected prefix" ;;
           esac
-          # Anything outside the token alphabet — whitespace, a stray newline,
-          # ANSI escapes from a redirected terminal — survives the prefix check
-          # above but invalidates the token. Compare against the cleaned form.
-          CLEAN=$(printf '%s' "$TOKEN" | tr -cd 'A-Za-z0-9_-')
-          if [ "${#CLEAN}" -ne "${#TOKEN}" ]; then
-            echo "::error::secret has ${#TOKEN} chars but only ${#CLEAN} valid ones — it picked up junk"
+          # Whitespace is the thing that actually breaks the token — a newline
+          # or space picked up when copying. Don't assume the rest of the
+          # alphabet: a base64 token may legitimately contain = or +.
+          WS=$(printf '%s' "$TOKEN" | tr -cd ' \t\r\n' | wc -c | tr -d ' ')
+          if [ "$WS" -gt 0 ]; then
+            echo "::error::secret contains $WS whitespace character(s) — that is what invalidates it"
           else
-            echo "all ${#TOKEN} characters are in the expected alphabet"
+            echo "no whitespace: ${#TOKEN} clean characters"
           fi
-          # Shape only: how many dash-separated parts, and their lengths.
-          echo "shape: $(printf '%s' "$CLEAN" | awk -F- '{for(i=1;i<=NF;i++) printf "%d ", length($i)}')"
+          # Shape only, no values: lengths of the dash-separated parts.
+          echo "shape: $(printf '%s' "$TOKEN" | tr -d ' \t\r\n' | awk -F- '{for(i=1;i<=NF;i++) printf "%d ", length($i)}')"
 
       - name: Update the YAML
         uses: anthropics/claude-code-action@v1

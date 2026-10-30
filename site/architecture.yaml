@@ -108,13 +108,19 @@ resources:
     type: lambda
     name: Capsule image lookup
     projects: [fall-damage]
-    description: Takes the Steam app id from each new-game event, downloads that game’s capsule art straight from the Steam CDN and stores it as <appid>-capsule.jpg. Games with no art on the CDN (404) are skipped rather than retried. Python 3.12, 60-second timeout, batches of up to 10 with concurrency capped at 5. Reports partial batch failures so only the bad records are retried.
+    description: Takes the Steam app id from each new-game event, asks the Steam Store API for that game’s details, then downloads the first usable capsule image it lists (falling back to the header image) and stores it as <appid>-capsule.jpg. Games with no usable art are skipped rather than retried. Python 3.12, 60-second timeout, batches of up to 10 with concurrency capped at 5. Reports partial batch failures so only the bad records are retried.
+
+  - id: steam-store-api
+    type: steam
+    name: Steam Store API
+    projects: [fall-damage]
+    description: store.steampowered.com/api/appdetails, queried by app id to find the URLs of a game’s capsule and header art. The base URL is configurable and defaults to store.steampowered.com.
 
   - id: steam-cdn
     type: steam
     name: Steam CDN
     projects: [fall-damage]
-    description: Where the capsule art is fetched from, at a predictable path built from the app id (capsule_616x353.jpg). The base URL is configurable and defaults to cdn.cloudflare.steamstatic.com.
+    description: Where the capsule art is downloaded from, at whatever image URL the Store API returns for the game. Anything under 1 KB is treated as an empty stub and the next image field is tried.
 
   - id: capsule-bucket
     type: s3
@@ -159,6 +165,7 @@ connections:
   - { from: games-export, to: export-bucket, label: stores }
   - { from: game-events, to: capsule-queue, label: subscribes }
   - { from: capsule-queue, to: capsule-lookup, label: triggers }
+  - { from: capsule-lookup, to: steam-store-api, label: requests details }
   - { from: capsule-lookup, to: steam-cdn, label: downloads }
   - { from: capsule-lookup, to: capsule-bucket, label: stores }
   - { from: capsule-cdn, to: capsule-bucket, label: serves from }

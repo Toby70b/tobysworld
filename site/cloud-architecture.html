@@ -228,6 +228,11 @@ projects:
     colour: "#C2710C"
     repo: ""
     description: This page — a single-page map of the infrastructure, served as a static site from S3 behind CloudFront.
+  - id: wishlist-basket
+    name: Wishlist budget
+    colour: "#D6336C"
+    repo: ""
+    description: Takes a Steam ID and a budget and suggests the best baskets of wishlist games to buy, as a static site with a thin proxy to Steam.
 
 resources:
   - id: import-schedule
@@ -350,6 +355,30 @@ resources:
     projects: [architecture-map]
     description: Holds the page and its YAML, uploaded by Terraform with per-file cache headers. Private, reachable only through the distribution in front of it.
 
+  - id: wishlist-cdn
+    type: cloudfront
+    name: Wishlist CDN
+    projects: [wishlist-basket, personal-domain]
+    description: Serves the wishlist app at wishlist.tobypeel.com, reusing the wildcard certificate on the personal domain. The site comes from S3 with a five-minute cache; /api/* goes to the proxy function uncached, signed with an origin access control.
+
+  - id: wishlist-bucket
+    type: s3
+    name: Wishlist site bucket
+    projects: [wishlist-basket]
+    description: Holds the built website, uploaded by Terraform. Private, reachable only through the distribution in front of it.
+
+  - id: wishlist-proxy
+    type: lambda
+    name: Wishlist API proxy
+    projects: [wishlist-basket]
+    description: Forwards the browser’s wishlist request to Steam and passes the response back, because Steam sends no CORS headers. Reached through a function URL that only CloudFront can call. Python 3.12, 10-second timeout, concurrency capped at 10.
+
+  - id: steam-wishlist-api
+    type: steam
+    name: Steam Wishlist API
+    projects: [wishlist-basket]
+    description: api.steampowered.com — IWishlistService/GetWishlistSortedFiltered/v1, returning a user’s wishlist in their own rank order with GB prices. The base URL is configurable.
+
 connections:
   - { from: import-schedule, to: games-import, label: invokes }
   - { from: games-import, to: steam-api-key, label: reads }
@@ -370,6 +399,10 @@ connections:
   - { from: hosted-zone, to: capsule-cdn, label: routes to }
   - { from: hosted-zone, to: map-cdn, label: routes to }
   - { from: map-cdn, to: map-bucket, label: serves from }
+  - { from: hosted-zone, to: wishlist-cdn, label: routes to }
+  - { from: wishlist-cdn, to: wishlist-bucket, label: serves from }
+  - { from: wishlist-cdn, to: wishlist-proxy, label: routes to }
+  - { from: wishlist-proxy, to: steam-wishlist-api, label: requests wishlist }
 </script>
 
 <script>
